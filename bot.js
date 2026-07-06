@@ -88,23 +88,32 @@ const formatUptime = (ms) => {
 
 // ============== PAIR ADDRESS ==============
 async function getPairAddress(targetDenom) {
-  const query = {
-    pair: {
-      asset_infos: [
-        { native_token: { denom: process.env.NATIVE_DENOM } },
-        { native_token: { denom: targetDenom } },
-      ],
-    },
-  };
-  try {
-    const res = await client.queryContractSmart(process.env.FACTORY, query);
-    const pair = res.contract_addr || res.pair_addr || res.pair?.contract_addr;
-    if (!pair) throw new Error('pair not present in response');
-    return pair;
-  } catch (e) {
-    log('Pair query failed:', e.message);
-    return null;
+  const native = { native_token: { denom: process.env.NATIVE_DENOM } };
+  const target = { native_token: { denom: targetDenom } };
+
+  const attempts = [
+    { pair: { asset_infos: [native, target], pair_type: { xyk: {} } } },
+    { pair: { asset_infos: [native, target] } },
+    { pair: { asset_infos: [target, native], pair_type: { xyk: {} } } },
+    { pair: { asset_infos: [target, native] } },
+  ];
+
+  let lastError = 'no response';
+  for (const query of attempts) {
+    try {
+      const res = await client.queryContractSmart(process.env.FACTORY, query);
+      const pair = res.contract_addr || res.pair_addr || res.pair?.contract_addr;
+      if (pair) {
+        log(`Pair found: ${pair}`);
+        return { pair, error: null };
+      }
+      lastError = 'response had no contract_addr';
+    } catch (e) {
+      lastError = e.message;
+    }
   }
+  log('All pair queries failed:', lastError);
+  return { pair: null, error: lastError };
 }
 
 // ============== SWAP ==============
@@ -161,8 +170,14 @@ async function startTrading() {
   const targetDenom = TOKEN_DENOMS[state.pairToken];
   if (!targetDenom) return bot.telegram.sendMessage(OWNER_ID, 'Token not supported.');
 
-  state.pairAddress = await getPairAddress(targetDenom);
-  if (!state.pairAddress) return bot.telegram.sendMessage(OWNER_ID, 'Trading pair not found.');
+  const { pair, error } = await getPairAddress(targetDenom);
+  if (!pair) {
+    return bot.telegram.sendMessage(
+      OWNER_ID,
+      `Trading pair not found for ${state.pairToken}.\nLast error: ${error}\n\nFactory: ${process.env.FACTORY}\nDenom: ${targetDenom}`,
+    );
+  }
+  state.pairAddress = pair;
 
   state.trading = true;
   state.cycle = 0;
