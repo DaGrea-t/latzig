@@ -134,7 +134,7 @@ async function executeSwap(pairAddress, offerDenom, askDenom, amount, slippage =
       pairAddress,
       msg,
       'auto',
-      `Latzigt ${isBuy ? 'Buy' : 'Sell'}`,
+      'Traded from degenter.io',
       coins(amount, offerDenom),
     );
     const after = await fetchBalance(askDenom);
