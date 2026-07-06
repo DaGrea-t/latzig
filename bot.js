@@ -47,7 +47,6 @@ const state = {
   trading: false,
   cycle: 0,
   swaps: 0,
-  interval: null,
   startedAt: null,
   consecutiveFailures: 0,
   pairAddress: null,
@@ -196,7 +195,11 @@ async function startTrading() {
       `Slippage: ${slipPct}%`,
   );
 
-  state.interval = setInterval(async () => {
+  runCycleLoop();
+}
+
+async function runCycleLoop() {
+  while (state.trading) {
     try {
       state.cycle += 1;
       const cycleAmount = randUzigInRange(state.amountMin, state.amountMax);
@@ -204,7 +207,8 @@ async function startTrading() {
 
       const zigBalance = await fetchBalance(process.env.NATIVE_DENOM);
       if (BigInt(zigBalance) < floor) {
-        return stopTrading(`Trading stopped: Balance ${uzigToZig(zigBalance)} ZIG < required ${uzigToZig(floor)} ZIG.`);
+        stopTrading(`Trading stopped: Balance ${uzigToZig(zigBalance)} ZIG < required ${uzigToZig(floor)} ZIG.`);
+        return;
       }
 
       const targetTokenDenom = TOKEN_DENOMS[state.pairToken];
@@ -224,18 +228,20 @@ async function startTrading() {
       }
 
       if (state.consecutiveFailures >= CONFIG.MAX_CONSECUTIVE_FAILURES) {
-        return stopTrading(`Trading stopped: ${CONFIG.MAX_CONSECUTIVE_FAILURES} consecutive failures.`);
+        stopTrading(`Trading stopped: ${CONFIG.MAX_CONSECUTIVE_FAILURES} consecutive failures.`);
+        return;
       }
     } catch (err) {
       log('Cycle error:', err.message);
       state.consecutiveFailures += 1;
     }
-  }, CONFIG.CYCLE_INTERVAL_MS);
+
+    if (!state.trading) return;
+    await new Promise((r) => setTimeout(r, CONFIG.CYCLE_INTERVAL_MS));
+  }
 }
 
 function stopTrading(reason = 'Trading stopped.') {
-  if (state.interval) clearInterval(state.interval);
-  state.interval = null;
   state.trading = false;
   state.step = null;
   bot.telegram.sendMessage(OWNER_ID, reason);
@@ -387,7 +393,7 @@ bot.on('text', (ctx) => {
 });
 
 const shutdown = (signal) => {
-  if (state.interval) clearInterval(state.interval);
+  state.trading = false;
   bot.stop(signal);
 };
 process.once('SIGINT', () => shutdown('SIGINT'));
