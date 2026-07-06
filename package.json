@@ -1,0 +1,15 @@
+{
+  "name": "latzigt-bot",
+  "version": "1.0.0",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "@cosmjs/cosmwasm-stargate": "^0.38.1",
+    "@cosmjs/proto-signing": "^0.38.1",
+    "@cosmjs/stargate": "^0.38.1",
+    "dotenv": "^16.4.5",
+    "telegraf": "^4.16.3"
+  }
+}
