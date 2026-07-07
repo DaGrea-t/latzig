@@ -205,13 +205,25 @@ async function runCycleLoop() {
       const cycleAmount = randUzigInRange(state.amountMin, state.amountMax);
       const floor = BigInt(cycleAmount) + CONFIG.GAS_BUFFER_UZIG;
 
-      const zigBalance = await fetchBalance(process.env.NATIVE_DENOM);
+      const targetTokenDenom = TOKEN_DENOMS[state.pairToken];
+      let zigBalance = await fetchBalance(process.env.NATIVE_DENOM);
       if (BigInt(zigBalance) < floor) {
-        stopTrading(`Trading stopped: Balance ${uzigToZig(zigBalance)} ZIG < required ${uzigToZig(floor)} ZIG.`);
-        return;
+        const tokenBalance = await fetchBalance(targetTokenDenom);
+        if (BigInt(tokenBalance || '0') > 0n) {
+          log(`Low ZIG (${uzigToZig(zigBalance)}) — dumping ${state.pairToken} to refill`);
+          bot.telegram.sendMessage(
+            OWNER_ID,
+            `Low ZIG (${uzigToZig(zigBalance)}). Dumping held ${state.pairToken} to refill and continuing.`,
+          );
+          await executeSwap(state.pairAddress, targetTokenDenom, process.env.NATIVE_DENOM, tokenBalance, CONFIG.DUST_DUMP_SLIPPAGE);
+          zigBalance = await fetchBalance(process.env.NATIVE_DENOM);
+        }
+        if (BigInt(zigBalance) < floor) {
+          stopTrading(`Trading stopped: Balance ${uzigToZig(zigBalance)} ZIG < required ${uzigToZig(floor)} ZIG (no ${state.pairToken} left to refill).`);
+          return;
+        }
       }
 
-      const targetTokenDenom = TOKEN_DENOMS[state.pairToken];
       const received = await executeSwap(state.pairAddress, process.env.NATIVE_DENOM, targetTokenDenom, cycleAmount);
       if (received) {
         await executeSwap(state.pairAddress, targetTokenDenom, process.env.NATIVE_DENOM, received);
